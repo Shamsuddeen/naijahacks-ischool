@@ -1,0 +1,8 @@
+{
+    "require": {
+        "opentok/opentok": "4.4.x",
+        "nexmo/client": "^2.0",
+        "toin0u/digitalocean-v2": "^2.2",
+        "sociallydev/spaces-api": "dev-master"
+    }
+}
