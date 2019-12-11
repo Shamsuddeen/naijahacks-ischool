@@ -55,6 +55,9 @@ composer install
 
 Start your local server and visit `http://localhost/naijahacks-ischool`
        
+### Demo
+
+https://ischoolweb.xyz
 
 
 
