@@ -17,125 +17,248 @@
         }
     }  
 ?>
+<!DOCTYPE html>
+<html lang="en">
 
-<html>
 <head>
-    <title> myClass </title>
-    <link href="css/app.css" rel="stylesheet" type="text/css">
+    <meta charset="UTF-8">
+    <title>iSchool Class</title>
+
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="https://assets.tokbox.com/solutions/css/style.css">
     <script src="https://static.opentok.com/v2/js/opentok.min.js"></script>
-    <style>
-        body, html {
-            background-color: gray;
-            height: 100%;
-        }
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/underscore.js/1.8.3/underscore-min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.17.1/moment.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/livestamp/1.1.2/livestamp.min.js"></script>
+    <script src="../public/js/components/opentok-solutions-logging.js"></script>
+    <script src="../public/js/components/opentok-text-chat.js"></script>
+    <script src="../public/js/components/opentok-screen-sharing.js"></script>
+    <script src="../public/js/components/opentok-annotation.js"></script>
+    <script src="../public/js/components/opentok-archiving.js"></script>
+    <script src="../public/js/components/opentok-acc-core.js"></script>
+    <!-- <script src="js/app.js"></script> -->
+	<script>
+/* global AccCore */
 
-        #videos {
-            position: relative;
-            width: 100%;
-            height: 100%;
-            margin-left: auto;
-            margin-right: auto;
-        }
+let otCore;
+const options = {
+  // A container can either be a query selector or an HTMLElement
+  // eslint-disable-next-line no-unused-vars
 
-        #subscriber {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 10;
-        }
+credentials: {
+  apiKey: "46472052",
+  sessionId : "<?php echo $sessionID; ?>",
+  token : "<?php echo $tokenID; ?>",
+},
+  streamContainers: function streamContainers(pubSub, type, data) {
+    return {
+      publisher: {
+        camera: '#cameraPublisherContainer',
+        screen: '#screenPublisherContainer',
+      },
+      subscriber: {
+        camera: '#cameraSubscriberContainer',
+        screen: '#screenSubscriberContainer',
+      },
+    }[pubSub][type];
+  },
+  controlsContainer: '#controls',
+  packages: ['screenSharing', 'annotation', 'archiving'],
+  communication: {
+    callProperties: null, // Using default
+  },
+  screenSharing: {
+    extensionID: 'plocfffmbcclpdifaikiikgplfnepkpo',
+    annotation: true,
+    externalWindow: false,
+    dev: true,
+    screenProperties: null, // Using default
+  },
+  annotation: {
 
-        #publisher {
-            position: absolute;
-            width: 360px;
-            height: 240px;
-            bottom: 10px;
-            left: 10px;
-            z-index: 100;
-            border: 3px solid white;
-            border-radius: 3px;
+  },
+  archiving: {
+    startURL: 'https://example.com/startArchive',
+    stopURL: 'https://example.com/stopArchive',
+  },
+};
+
+/** Application Logic */
+const app = function() {
+  const state = {
+    connected: false,
+    active: false,
+    publishers: null,
+    subscribers: null,
+    meta: null,
+    localAudioEnabled: true,
+    localVideoEnabled: true,
+  };
+
+  /**
+   * Update the size and position of video containers based on the number of
+   * publishers and subscribers specified in the meta property returned by otCore.
+   */
+  const updateVideoContainers = () => {
+    const { meta } = state;
+    const sharingScreen = meta ? !!meta.publisher.screen : false;
+    const viewingSharedScreen = meta ? meta.subscriber.screen : false;
+    const activeCameraSubscribers = meta ? meta.subscriber.camera : 0;
+
+    const videoContainerClass = `App-video-container ${(sharingScreen || viewingSharedScreen) ? 'center' : ''}`;
+    document.getElementById('appVideoContainer').setAttribute('class', videoContainerClass);
+
+    const cameraPublisherClass =
+      `video-container ${!!activeCameraSubscribers || sharingScreen ? 'small' : ''} ${!!activeCameraSubscribers || sharingScreen ? 'small' : ''} ${sharingScreen || viewingSharedScreen ? 'left' : ''}`;
+    document.getElementById('cameraPublisherContainer').setAttribute('class', cameraPublisherClass);
+
+    const screenPublisherClass = `video-container ${!sharingScreen ? 'hidden' : ''}`;
+    document.getElementById('screenPublisherContainer').setAttribute('class', screenPublisherClass);
+
+    const cameraSubscriberClass =
+      `video-container ${!activeCameraSubscribers ? 'hidden' : ''} active-${activeCameraSubscribers} ${viewingSharedScreen || sharingScreen ? 'small' : ''}`;
+    document.getElementById('cameraSubscriberContainer').setAttribute('class', cameraSubscriberClass);
+
+    const screenSubscriberClass = `video-container ${!viewingSharedScreen ? 'hidden' : ''}`;
+    document.getElementById('screenSubscriberContainer').setAttribute('class', screenSubscriberClass);
+  };
+
+
+  /**
+   * Update the UI
+   * @param {String} update - 'connected', 'active', or 'meta'
+   */
+  const updateUI = (update) => {
+    const { connected, active } = state;
+
+    switch (update) {
+      case 'connected':
+        if (connected) {
+          document.getElementById('connecting-mask').classList.add('hidden');
+          document.getElementById('start-mask').classList.remove('hidden');
         }
-    </style>
+        break;
+      case 'active':
+        if (active) {
+          document.getElementById('cameraPublisherContainer').classList.remove('hidden');
+          document.getElementById('start-mask').classList.add('hidden');
+          document.getElementById('controls').classList.remove('hidden');
+        }
+        break;
+      case 'meta':
+        updateVideoContainers();
+        break;
+      default:
+        console.log('nothing to do, nowhere to go');
+    }
+  };
+
+  /**
+   * Update the state and UI
+   */
+  const updateState = function(updates) {
+    Object.assign(state, updates);
+    Object.keys(updates).forEach(update => updateUI(update));
+  };
+
+  /**
+   * Start publishing video/audio and subscribe to streams
+   */
+  const startCall = function() {
+    otCore.startCall()
+      .then(function({ publishers, subscribers, meta }) {
+        updateState({ publishers, subscribers, meta, active: true });
+      }).catch(function(error) { console.log(error); });
+  };
+
+  /**
+   * Toggle publishing local audio
+   */
+  const toggleLocalAudio = function() {
+    const enabled = state.localAudioEnabled;
+    otCore.toggleLocalAudio(!enabled);
+    updateState({ localAudioEnabled: !enabled });
+    const action = enabled ? 'add' : 'remove';
+    document.getElementById('toggleLocalAudio').classList[action]('muted');
+  };
+
+  /**
+   * Toggle publishing local video
+   */
+  const toggleLocalVideo = function() {
+    const enabled = state.localVideoEnabled;
+    otCore.toggleLocalVideo(!enabled);
+    updateState({ localVideoEnabled: !enabled });
+    const action = enabled ? 'add' : 'remove';
+    document.getElementById('toggleLocalVideo').classList[action]('muted');
+  };
+
+  /**
+   * Subscribe to otCore and UI events
+   */
+  const createEventListeners = function() {
+    const events = [
+      'subscribeToCamera',
+      'unsubscribeFromCamera',
+      'subscribeToScreen',
+      'unsubscribeFromScreen',
+      'startScreenShare',
+      'endScreenShare',
+    ];
+    events.forEach(event => otCore.on(event, ({ publishers, subscribers, meta }) => {
+      updateState({ publishers, subscribers, meta });
+    }));
+
+    document.getElementById('start').addEventListener('click', startCall);
+    document.getElementById('toggleLocalAudio').addEventListener('click', toggleLocalAudio);
+    document.getElementById('toggleLocalVideo').addEventListener('click', toggleLocalVideo);
+  };
+
+  /**
+   * Initialize otCore, connect to the session, and listen to events
+   */
+  const init = function() {
+    otCore = new AccCore(options);
+    otCore.connect().then(function() { updateState({ connected: true }); });
+    createEventListeners();
+  };
+
+  init();
+};
+
+document.addEventListener('DOMContentLoaded', app);
+	</script>
 </head>
+
 <body>
-
-    <div id="videos">
-        <div id="subscriber"></div>
-        <div id="publisher"></div>
-        <a href="finish.php?ref=<?php echo $ref; ?>" id='finished'  onClick="finished();">Finish Class</a>
+    <div class="App">
+        <div class="App-header">
+            <div class="App-logo">iSchool</div>
+            <h1>Class</h1>
+        </div>
+        <div class="App-main">
+            <div id="controls" class='App-control-container hidden'>
+                <div class="ots-video-control circle audio" id="toggleLocalAudio"></div>
+                <div class="ots-video-control circle video" id="toggleLocalVideo"></div>
+            </div>
+            <div class="App-video-container" id="appVideoContainer">
+                <div class="App-mask" id="connecting-mask">
+                    <progress-spinner dark style="font-size:50px"></progress-spinner>
+                    <div class="message with-spinner">Connecting</div>
+                </div>
+                <div class="App-mask hidden" id="start-mask">
+                    <div class="message button clickable" id="start">Click to Start Class</div>
+                </div>
+                <div id="cameraPublisherContainer" class="video-container hidden"></div>
+                <div id="screenPublisherContainer" class="video-container hidden"></div>
+                <div id="cameraSubscriberContainer" class="video-container-hidden"></div>
+                <div id="screenSubscriberContainer" class="video-container-hidden"></div>
+            </div>
+            <div id="chat" class="App-chat-container"></div>
+        </div>
     </div>
-    <!-- <script type="text/javascript" src="app.js"></script> -->
-    <script>
-        // replace these values with those generated in your TokBox Account
-        var apiKey = '46472052';
-        var sessionId = '<?php echo $sessionID; ?>';
-        var token = '<?php echo $tokenID; ?>';
 
-        // (optional) add server code here
-        initializeSession();
-
-        // Handling all of our errors here by alerting them
-        function handleError(error) {
-            if (error) {
-                alert(error.message);
-            }
-        }
-
-        function initializeSession() {
-            var session = OT.initSession(apiKey, sessionId);
-
-            // Subscribe to a newly created stream
-
-            // Create a publisher
-            var publisher = OT.initPublisher('publisher', {
-                insertMode: 'append',
-                width: '100%',
-                height: '100%'
-            }, handleError);
-
-            // Connect to the session
-            session.connect(token, function (error) {
-                // If the connection is successful, publish to the session
-                if (error) {
-                    handleError(error);
-                } else {
-                    session.publish(publisher, handleError);
-                }
-            });
-        }
-
-        function finished(){
-            window.location="finish.php?ref=<?php echo $ref; ?>";
-        }
-
-        session.on('streamCreated', function (event) {
-            session.subscribe(event.stream, 'subscriber', {
-                insertMode: 'append',
-                width: '100%',
-                height: '100%'
-            }, handleError);
-        });
-        
-        session.on("sessionDisconnected", function(event) {
-            alert("The session disconnected. " + event.reason);
-        });
-    </script>
-    <?php
-        use OpenTok\OpenTok;
-
-        $opentok = new OpenTok($apiKey, $apiSecret);
-
-        use OpenTok\MediaMode;
-        use OpenTok\ArchiveMode;
-        use OpenTok\Session;
-        use OpenTok\Role;
-        
-        $archive = $opentok->startArchive($sessionID);
-
-        // Store this archiveId in the database for later use
-        $archiveId = $archive->id;
-        setArchive($sessionID, $archiveId);
-    ?>
 </body>
+
 </html>

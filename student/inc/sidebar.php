@@ -29,8 +29,6 @@
                   <li><a><i class="fa fa-home"></i> Home <span class="fa fa-chevron-down"></span></a>
                     <ul class="nav child_menu">
                       <li><a href="./">Dashboard</a></li>
-                      <li><a href="all-books.php">All Books</a></li>
-                      <li><a href="index3.html">Dashboard3</a></li>
                     </ul>
                   </li>                
                   <!-- Course Lecurer Only -->
